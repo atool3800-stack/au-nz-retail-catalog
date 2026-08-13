@@ -33,7 +33,7 @@ from datetime import datetime, timezone
 import requests
 
 DATA_DIR = os.environ.get("DATA_DIR", "data")
-MAX_WORKERS = int(os.environ.get("MAX_WORKERS", "6"))
+MAX_WORKERS = int(os.environ.get("MAX_WORKERS", "30"))
 NOTION_VERSION = "2022-06-28"
 
 DEFAULTS = {
@@ -257,24 +257,32 @@ def sync(args):
             return False, (rec["sku_id"], str(e))
 
     # create new pages
+    done = 0
+    total_ops = len(to_create) + len(to_update)
     with ThreadPoolExecutor(max_workers=MAX_WORKERS) as ex:
         futs = {ex.submit(work, r): r["sku_id"] for r in to_create}
         for fut in as_completed(futs):
             ok, info = fut.result()
+            done += 1
             if ok:
                 success += 1
             else:
                 failed.append(info)
+            if done % 1000 == 0:
+                print(f"[sync] progress {done}/{total_ops} ({success} ok, {len(failed)} failed)")
 
     # update existing pages
     with ThreadPoolExecutor(max_workers=MAX_WORKERS) as ex:
         futs = {ex.submit(work, r): r["sku_id"] for r in to_update}
         for fut in as_completed(futs):
             ok, info = fut.result()
+            done += 1
             if ok:
                 success += 1
             else:
                 failed.append(info)
+            if done % 1000 == 0:
+                print(f"[sync] progress {done}/{total_ops} ({success} ok, {len(failed)} failed)")
 
     summary = {
         "sync_time": sync_ts,
