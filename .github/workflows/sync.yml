@@ -1,0 +1,53 @@
+name: Annual Catalog Sync to Notion
+
+# The AU/NZ retail catalog is refreshed once a year, and on-demand.
+on:
+  schedule:
+    # Yearly refresh - runs at 00:00 UTC on January 1st (annual catalog year)
+    - cron: "0 0 1 1 *"
+  workflow_dispatch:        # manual trigger from the GitHub UI / API
+  push:
+    branches: [main]
+    paths:
+      - "data/products_2026.json"
+      - "data/inventory_updates_2026.csv"
+      - "sync_to_notion.py"
+
+jobs:
+  sync:
+    name: Sync catalog data to Notion
+    runs-on: ubuntu-latest
+    timeout-minutes: 180        # allows 10,000+ SKUs to complete well within limits
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Run sync to Notion
+        id: sync
+        env:
+          NOTION_TOKEN: ${{ secrets.NOTION_TOKEN }}
+          NOTION_DATABASE_ID: ${{ vars.NOTION_DATABASE_ID }}
+          DATA_OWNER: ${{ github.repository_owner }}
+          DATA_REPO: ${{ github.event.repository.name }}
+          DATA_BRANCH: ${{ github.ref_name }}
+          GITHUB_TOKEN: ${{ github.token }}
+          MAX_WORKERS: "6"
+        run: |
+          python sync_to_notion.py || echo "SYNC_EXIT_CODE=$?" >> "$GITHUB_ENV"
+
+      - name: Upload sync result
+        uses: actions/upload-artifact@v4
+        with:
+          name: sync-result
+          path: |
+            sync_result.json
+            sync_failed.json
+          if-no-files-found: warn
